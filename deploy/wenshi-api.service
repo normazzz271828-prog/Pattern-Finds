@@ -10,6 +10,7 @@ WorkingDirectory=/opt/wenshi/app
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=OPENBLAS_NUM_THREADS=1
+Environment=WENSHI_MODEL_PATH=/opt/wenshi/models/u2net.onnx
 ExecStart=/opt/wenshi/venv/bin/python -m uvicorn backend.api:app --host 127.0.0.1 --port 8510 --workers 1 --no-access-log
 Restart=on-failure
 RestartSec=5
@@ -17,7 +18,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-MemoryMax=384M
+MemoryMax=640M
 CPUQuota=100%
 UMask=0077
 

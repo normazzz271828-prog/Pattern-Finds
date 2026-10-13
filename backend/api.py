@@ -1,5 +1,6 @@
 """Bounded, in-memory background separation service for the ECS pilot."""
 import asyncio
+from contextlib import asynccontextmanager
 from collections import OrderedDict
 from io import BytesIO
 import time
@@ -9,8 +10,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageOps, UnidentifiedImageError
 import numpy as np
 from starlette.concurrency import run_in_threadpool
+from backend.segmentation import foreground_mask, warmup, MODEL_NAME
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+@asynccontextmanager
+async def lifespan(app):
+    await run_in_threadpool(warmup)
+    yield
+
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["https://patternfinds.streamlit.app"],
                    allow_methods=["POST", "GET"], allow_headers=["Content-Type"],
                    expose_headers=["X-Wenshi-Method"])
@@ -27,30 +34,25 @@ def separate(raw):
                 raise ValueError("请选择 JPG、PNG 或 WebP 图片。")
             if source.width * source.height > 24_000_000:
                 raise ValueError("图片尺寸超过 2400 万像素。")
+            # Reduce before EXIF's copy to avoid two full-resolution buffers.
+            source.draft("RGB", (1600, 1600))
+            source.thumbnail((1600, 1600))
             image = ImageOps.exif_transpose(source)
-            image.thumbnail((1600, 1600))
             pixels = np.array(image.convert("RGBA"))
         preserved = np.mean(pixels[:, :, 3] < 240) > 0.01
         if not preserved:
-            rgb = pixels[:, :, :3].astype(np.float32)
-            edge = np.concatenate([rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]])
-            bg = np.median(edge, axis=0)
-            if np.mean(np.linalg.norm(edge - bg, axis=1) < 45) < .7:
-                raise ValueError("背景较复杂，请换用纯色背景照片，或先裁剪纹样。")
-            alpha = np.clip((np.linalg.norm(rgb-bg, axis=2)-25)/35, 0, 1)
-            pixels[:, :, 3] = np.rint(pixels[:, :, 3]*alpha).astype(np.uint8)
-            if np.mean(pixels[:, :, 3] > 128) < .002 or np.mean(pixels[:, :, 3] < 20) < .01:
-                raise ValueError("没有找到清晰的纹样与背景，请更换对比更明显的照片。")
+            mask = np.asarray(foreground_mask(Image.fromarray(pixels)), dtype=np.float32) / 255
+            pixels[:, :, 3] = np.rint(pixels[:, :, 3]*mask).astype(np.uint8)
         output = BytesIO()
         Image.fromarray(pixels).save(output, format="PNG")
-        return output.getvalue(), "preserved-alpha" if preserved else "basic-color-separation"
+        return output.getvalue(), "preserved-alpha" if preserved else "ai-" + MODEL_NAME
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
         raise ValueError("图片无法读取或尺寸过大，请更换图片。") from error
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "wenshi", "engine": "basic-color-separation", "ai_model": False}
+    return {"status": "ok", "service": "wenshi", "engine": MODEL_NAME, "ai_model": True, "device": "cpu"}
 
 
 @app.post("/extract")

@@ -15,7 +15,7 @@ function resetExtraction() {
   activeWorker = null;
   resultUrl = null;
   extractButton.disabled = false;
-  extractButton.textContent = '提取纹样';
+  extractButton.textContent = cloudApi ? 'AI 提取纹样' : '提取纹样';
   ['show-result', 'use-extracted'].forEach(id => document.getElementById(id).disabled = true);
   board.removeAttribute('aria-busy');
 }
@@ -67,7 +67,7 @@ fileInput.onchange = async () => {
     document.getElementById('show-source').disabled = false;
     extractButton.disabled = false;
     statusText.textContent = cloudApi
-      ? '照片已就绪。点击提取将发送至云服务器处理，不保存原图；适合纯色背景。'
+      ? '照片已就绪。点击提取将发送至云服务器进行 AI 处理，不保存原图；建议先裁剪到主体。'
       : '照片已就绪。适合纯色背景；复杂背景请先裁剪。照片在当前设备处理，不上传。';
   } catch (error) {
     if (token === generation) statusText.textContent = error.message.includes('像素') ? error.message : '图片无法读取，请重新选择有效图片。';
@@ -90,7 +90,7 @@ extractButton.onclick = async () => {
       activeRequest = new AbortController();
       const timer = setTimeout(() => activeRequest?.abort(), 90000);
       try {
-        statusText.textContent = '正在云端分离背景，请稍候…';
+        statusText.textContent = '正在进行 AI 纹样提取，请稍候…';
         const response = await fetch(cloudApi + '/extract', {
           method: 'POST', headers: {'Content-Type': selectedFile.type},
           body: selectedFile, signal: activeRequest.signal,
@@ -108,9 +108,12 @@ extractButton.onclick = async () => {
         if (token !== generation) return;
         resultUrl = encoded; showPhoto(true);
         ['show-result', 'use-extracted'].forEach(id => document.getElementById(id).disabled = false);
-        statusText.textContent = response.headers.get('X-Wenshi-Method') === 'preserved-alpha'
+        const method = response.headers.get('X-Wenshi-Method') || '';
+        statusText.textContent = method === 'preserved-alpha'
           ? '云端已保留原图透明背景，可带入工坊。'
-          : '云端基础分离完成，请检查细节；复杂照片的 AI 模型尚未接入。';
+          : method.startsWith('ai-')
+            ? 'AI 提取完成，请检查主体与细线条。重复纹样或低对比照片建议裁剪后重试。'
+            : '基础分离完成，请检查细节。';
         return;
       } finally { clearTimeout(timer); }
     }

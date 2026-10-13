@@ -30,7 +30,8 @@ def bundled_page(api_url: str = "") -> str:
     if api_url:
         page = page.replace("<head>", "<head><script>window.WENSHI_API_URL=" + json.dumps(api_url) + ";</script>")
         page = page.replace("支持纯色背景的基础分离，复杂背景暂不支持。照片在当前设备处理，不上传。",
-                            "提取时照片会发送至云服务器处理，不保存原图。当前支持纯色背景的基础分离。")
+                            "提取时照片会发送至云服务器进行 AI 处理，不保存原图。建议先裁剪到纹样主体。")
+        page = page.replace('id="extract-demo" disabled>提取纹样', 'id="extract-demo" disabled>AI 提取纹样')
     return page
 
 

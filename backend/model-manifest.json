@@ -1,0 +1,29 @@
+{
+  "active": "u2net",
+  "models": [
+    {
+      "name": "u2net",
+      "url": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",
+      "bytes": 175997641,
+      "md5": "60024c5c889badc19c04ad937298a77b",
+      "sha256": "8d10d2f3bb75ae3b6d527c77944fc5e7dcd94b29809d47a739a7a728a912b491"
+    },
+    {
+      "name": "u2netp",
+      "url": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx",
+      "bytes": 4574861,
+      "md5": "8e83ca70e441ab06c318d82300c84806",
+      "sha256": "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8"
+    }
+  ],
+  "source": "https://github.com/xuebinqin/U-2-Net",
+  "onnx_distribution": "https://github.com/danielgatis/rembg",
+  "input": [
+    1,
+    3,
+    320,
+    320
+  ],
+  "runtime": "CPUExecutionProvider",
+  "trained_for": "salient object detection"
+}
