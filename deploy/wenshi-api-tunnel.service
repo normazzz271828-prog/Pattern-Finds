@@ -1,0 +1,19 @@
+[Unit]
+Description=Wenshi pilot HTTPS API tunnel
+After=network-online.target wenshi-api.service
+Wants=network-online.target wenshi-api.service
+
+[Service]
+User=wenshi
+Group=wenshi
+ExecStart=/opt/wenshi/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8510
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,8 @@
-/* The hosted edition processes photos on the visitor's device; no local server required. */
+/* Use the configured cloud API; standalone static previews use a browser Worker. */
 let sourceUrl = null, selectedFile = null, resultUrl = null, demoReady = false;
 let generation = 0, activeWorker = null;
+let activeRequest = null;
+const cloudApi = window.WENSHI_API_URL || '';
 const board = document.getElementById('photo-board');
 const statusText = document.getElementById('extract-status');
 const fileInput = document.getElementById('photo-input');
@@ -8,6 +10,8 @@ const extractButton = document.getElementById('extract-demo');
 function resetExtraction() {
   generation++;
   if (activeWorker) activeWorker.terminate();
+  if (activeRequest) activeRequest.abort();
+  activeRequest = null;
   activeWorker = null;
   resultUrl = null;
   extractButton.disabled = false;
@@ -62,7 +66,9 @@ fileInput.onchange = async () => {
     document.getElementById('photo-name').textContent = file.name;
     document.getElementById('show-source').disabled = false;
     extractButton.disabled = false;
-    statusText.textContent = '照片已就绪。适合纯色背景；复杂背景请先裁剪。照片在当前设备处理，不上传。';
+    statusText.textContent = cloudApi
+      ? '照片已就绪。点击提取将发送至云服务器处理，不保存原图；适合纯色背景。'
+      : '照片已就绪。适合纯色背景；复杂背景请先裁剪。照片在当前设备处理，不上传。';
   } catch (error) {
     if (token === generation) statusText.textContent = error.message.includes('像素') ? error.message : '图片无法读取，请重新选择有效图片。';
   }
@@ -73,13 +79,41 @@ extractButton.onclick = async () => {
     ['show-result', 'use-extracted'].forEach(id => document.getElementById(id).disabled = false);
     statusText.textContent = '预设示例已就绪，可带入工坊。'; return;
   }
-  if (!selectedFile || activeWorker) return;
+  if (!selectedFile || activeWorker || activeRequest) return;
   const token = generation;
   extractButton.disabled = true;
   board.setAttribute('aria-busy', 'true');
   statusText.textContent = '正在分离背景，请稍候…';
   let bitmap;
   try {
+    if (cloudApi) {
+      activeRequest = new AbortController();
+      const timer = setTimeout(() => activeRequest?.abort(), 90000);
+      try {
+        statusText.textContent = '正在云端分离背景，请稍候…';
+        const response = await fetch(cloudApi + '/extract', {
+          method: 'POST', headers: {'Content-Type': selectedFile.type},
+          body: selectedFile, signal: activeRequest.signal,
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(typeof error.detail === 'string' ? error.detail : '云端处理未完成，请稍后重试。');
+        }
+        const blob = await response.blob();
+        if (blob.type !== 'image/png') throw new Error('云端未返回有效图片，请稍后重试。');
+        const encoded = await new Promise((resolve, reject) => {
+          const reader = new FileReader(); reader.onload = () => resolve(reader.result);
+          reader.onerror = reject; reader.readAsDataURL(blob);
+        });
+        if (token !== generation) return;
+        resultUrl = encoded; showPhoto(true);
+        ['show-result', 'use-extracted'].forEach(id => document.getElementById(id).disabled = false);
+        statusText.textContent = response.headers.get('X-Wenshi-Method') === 'preserved-alpha'
+          ? '云端已保留原图透明背景，可带入工坊。'
+          : '云端基础分离完成，请检查细节；复杂照片的 AI 模型尚未接入。';
+        return;
+      } finally { clearTimeout(timer); }
+    }
     bitmap = await createImageBitmap(selectedFile);
     if (token !== generation) { bitmap.close(); return; }
     const ratio = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
@@ -103,11 +137,14 @@ extractButton.onclick = async () => {
     ['show-result', 'use-extracted'].forEach(id => document.getElementById(id).disabled = false);
     statusText.textContent = data.preserved ? '已保留原图透明背景，可带入工坊。' : '基础背景分离完成，请检查细节。复杂照片尚需 AI 模型支持。';
   } catch (error) {
-    if (token === generation) statusText.textContent = error.message;
+    if (token === generation) statusText.textContent = error.name === 'AbortError'
+      ? '云端请求超时，请稍后重试。'
+      : error instanceof TypeError ? '云端连接失败，请稍后重试。' : error.message;
   } finally {
     if (token === generation) {
       if (activeWorker) activeWorker.terminate();
       activeWorker = null; extractButton.disabled = false; board.removeAttribute('aria-busy');
+      activeRequest = null;
     }
   }
 };

@@ -12,7 +12,7 @@ st.set_page_config(page_title="纹拾 · 让纹样生长于日常", page_icon="�
 
 
 @st.cache_data
-def bundled_page() -> str:
+def bundled_page(api_url: str = "") -> str:
     page = (ROOT / "index.html").read_text(encoding="utf-8")
     page = re.sub(r'<link[^>]+href="([^"/]+\.css)"[^>]*>',
                   lambda m: '<style>' + (ROOT / m[1]).read_text(encoding="utf-8") + '</style>', page)
@@ -27,6 +27,10 @@ def bundled_page() -> str:
     page = page.replace("new Worker('extract-worker.js')", "new Worker(URL.createObjectURL(new Blob([" + worker + "], {type:'text/javascript'})))")
     # srcdoc has no standalone URL. Navigation remains inside the embedded page.
     page = page.replace("history.replaceState(null,'','#'+id);", "")
+    if api_url:
+        page = page.replace("<head>", "<head><script>window.WENSHI_API_URL=" + json.dumps(api_url) + ";</script>")
+        page = page.replace("支持纯色背景的基础分离，复杂背景暂不支持。照片在当前设备处理，不上传。",
+                            "提取时照片会发送至云服务器处理，不保存原图。当前支持纯色背景的基础分离。")
     return page
 
 
@@ -40,4 +44,6 @@ iframe[title="纹拾创作网站"] {
   height:100dvh !important; border:0; z-index:100;
 }
 </style>''')
-st.iframe(bundled_page(), height=900, alt="纹拾创作网站")
+config_file = Path(__file__).parent / "cloud_config.json"
+api_url = json.loads(config_file.read_text(encoding="utf-8")).get("api_url", "") if config_file.exists() else ""
+st.iframe(bundled_page(api_url), height=900, alt="纹拾创作网站")
